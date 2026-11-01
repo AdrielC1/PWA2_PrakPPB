@@ -62,6 +62,7 @@ export const getUserProfile = () => {
     username: 'Shooter',
     avatar: null,
     bio: '',
+    defaultWa: '6281234567890',
     userId: getUserIdentifier(),
   }
 }

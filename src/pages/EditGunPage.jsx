@@ -8,6 +8,9 @@ import {
   Save,
   CheckCircle,
   AlertCircle,
+  Star,
+  Trash2,
+  Images,
 } from 'lucide-react'
 import gunService from '../services/gunService'
 import uploadService from '../services/uploadService'
@@ -22,8 +25,7 @@ import {
 import ConfirmModal from '../components/modals/ConfirmModal'
 
 /**
- * EditGunPage — Edit an existing weapon / hardware item.
- * Supports updating specs, steps, image replacement, and draft management.
+ * EditGunPage — Edit an existing weapon / hardware item with Multiple Images support.
  */
 export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
   const targetId = gunId || gun?.id
@@ -41,13 +43,14 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
     difficulty: 'mudah',
     price: 599,
     description: '',
+    seller_whatsapp: '6281234567890',
     servings: 1,
     is_featured: false,
   })
 
-  const [currentImageUrl, setCurrentImageUrl] = useState('')
-  const [imageFile, setImageFile] = useState(null)
-  const [imagePreview, setImagePreview] = useState(null)
+  // Multiple Images State
+  const [images, setImages] = useState(['/guns/pistol.svg'])
+  const [customImageUrl, setCustomImageUrl] = useState('')
   const [uploading, setUploading] = useState(false)
 
   // Specs & Steps
@@ -65,7 +68,6 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
         setLoading(true)
         setError('')
 
-        // If gun was passed directly and has full details, use it; else fetch from API
         let data = gun
         if (!data || !data.ingredients || !data.steps) {
           if (targetId && !String(targetId).startsWith('local-')) {
@@ -85,10 +87,16 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
             difficulty: data.difficulty || 'mudah',
             price: data.price ?? data.cook_time ?? 599,
             description: data.description || '',
+            seller_whatsapp: data.seller_whatsapp || '6281234567890',
             servings: data.servings || 1,
             is_featured: Boolean(data.is_featured),
           })
-          setCurrentImageUrl(data.image_url || data.image || '/guns/pistol.svg')
+
+          // Extract multiple images
+          const rawImgs = Array.isArray(data.images) && data.images.length > 0
+            ? data.images
+            : [data.image_url || data.image || '/guns/pistol.svg']
+          setImages(rawImgs.filter(Boolean))
 
           if (data.ingredients && data.ingredients.length > 0) {
             setSpecs(data.ingredients.map((ing) => ({
@@ -131,8 +139,8 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
       if (draft.formData) setFormData(draft.formData)
       if (draft.specs) setSpecs(draft.specs)
       if (draft.steps) setSteps(draft.steps)
-      if (draft.imagePreview) {
-        setImagePreview(draft.imagePreview)
+      if (Array.isArray(draft.images) && draft.images.length > 0) {
+        setImages(draft.images)
       }
       setShowDraftModal(false)
       setSuccessMsg('Saved draft restored.')
@@ -151,7 +159,7 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
       formData,
       specs,
       steps,
-      imagePreview: imagePreview || currentImageUrl,
+      images,
     }
     const saved = saveDraft(draftData, targetId)
     if (saved) {
@@ -162,47 +170,79 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
     }
   }
 
-  // Handle new image file
-  const handleImageChange = (e) => {
-    const file = e.target.files[0]
-    if (!file) return
+  // Handle image file upload (supports multiple)
+  const handleFilesUpload = async (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError('File size exceeds 5MB limit.')
-      return
-    }
-
-    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
-    if (!allowed.includes(file.type)) {
-      setError('Allowed formats: .jpg, .jpeg, .png, .webp')
-      return
-    }
-
-    setImageFile(file)
-    setImagePreview(URL.createObjectURL(file))
+    setUploading(true)
     setError('')
+
+    const newUploaded = []
+    for (const file of files) {
+      if (file.size > 5 * 1024 * 1024) {
+        setError(`File ${file.name} melebihi 5MB.`)
+        continue
+      }
+      try {
+        const res = await uploadService.uploadImage(file)
+        if (res.success && res.data?.url) {
+          newUploaded.push(res.data.url)
+        } else {
+          newUploaded.push(URL.createObjectURL(file))
+        }
+      } catch {
+        newUploaded.push(URL.createObjectURL(file))
+      }
+    }
+
+    if (newUploaded.length > 0) {
+      setImages((prev) => [...prev, ...newUploaded])
+      setSuccessMsg(`${newUploaded.length} foto baru berhasil ditambahkan.`)
+      setTimeout(() => setSuccessMsg(''), 3000)
+    }
+
+    setUploading(false)
+    e.target.value = ''
   }
 
-  const handleUploadNewImage = async () => {
-    if (!imageFile) return
-    try {
-      setUploading(true)
-      const res = await uploadService.uploadImage(imageFile)
-      if (res.success && res.data?.url) {
-        setCurrentImageUrl(res.data.url)
-        setImageFile(null)
-        setImagePreview(null)
-        setSuccessMsg('New image uploaded successfully.')
-        setTimeout(() => setSuccessMsg(''), 3000)
-      }
-    } catch (err) {
-      console.warn('Image upload failed, using local blob:', err)
-      setCurrentImageUrl(imagePreview)
-      setImageFile(null)
-      setImagePreview(null)
-    } finally {
-      setUploading(false)
+  // Add preset image
+  const handleAddPreset = (url) => {
+    setImages((prev) => [...prev, url])
+    setSuccessMsg('Foto preset ditambahkan!')
+    setTimeout(() => setSuccessMsg(''), 2000)
+  }
+
+  // Add custom URL image
+  const handleAddCustomUrl = (e) => {
+    e.preventDefault()
+    if (!customImageUrl.trim()) return
+    setImages((prev) => [...prev, customImageUrl.trim()])
+    setCustomImageUrl('')
+    setSuccessMsg('URL foto ditambahkan!')
+    setTimeout(() => setSuccessMsg(''), 2000)
+  }
+
+  // Set image as primary (move to index 0)
+  const handleSetPrimary = (idx) => {
+    if (idx === 0) return
+    setImages((prev) => {
+      const copy = [...prev]
+      const [selected] = copy.splice(idx, 1)
+      return [selected, ...copy]
+    })
+    setSuccessMsg('Foto utama diperbarui!')
+    setTimeout(() => setSuccessMsg(''), 2000)
+  }
+
+  // Remove an image from gallery
+  const handleRemoveImage = (idx) => {
+    if (images.length <= 1) {
+      setError('Katalog minimal harus memiliki 1 gambar.')
+      setTimeout(() => setError('') , 3000)
+      return
     }
+    setImages((prev) => prev.filter((_, i) => i !== idx))
   }
 
   // Specs & Steps
@@ -265,6 +305,11 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
       return
     }
 
+    const cleanImages = images.filter(Boolean)
+    if (cleanImages.length === 0) {
+      cleanImages.push('/guns/pistol.svg')
+    }
+
     const payload = {
       name: formData.name.trim(),
       type: formData.type || (formData.category === 'minuman' ? 'Rifle' : 'Pistol'),
@@ -272,7 +317,9 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
       price: Number(formData.price) || 500,
       category: formData.category || 'makanan',
       description: formData.description.trim() || `${formData.type} caliber ${formData.caliber}.`,
-      image_url: imagePreview || currentImageUrl || '/guns/pistol.svg',
+      seller_whatsapp: formData.seller_whatsapp || '6281234567890',
+      image_url: cleanImages[0],
+      images: cleanImages,
       prep_time: 15,
       cook_time: Number(formData.price) || 500,
       servings: Number(formData.servings) || 1,
@@ -316,7 +363,7 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
       {/* Head */}
       <div className="form-head">
         <button type="button" className="detail-back" onClick={onBack}>
-          <ArrowLeft size={18} /> Back
+          <ArrowLeft size={18} /> Kembali
         </button>
         <button
           type="button"
@@ -324,16 +371,14 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
           onClick={handleManualSaveDraft}
           title="Save draft"
         >
-          <Save size={14} /> Save Draft
+          <Save size={14} /> Simpan Draft
         </button>
       </div>
 
-      <div className="form-title-group">
-        <h1 className="display">Modify Hardware Record</h1>
-        <p className="lede">
-          Updating record ID: <code className="mono-badge">{targetId}</code>
-        </p>
-      </div>
+      <section className="masthead">
+        <h1 className="display">Edit Hardware #{targetId}</h1>
+        <p className="lede">Perbarui detail, spesifikasi, dan kelola banyak foto/gambar produk.</p>
+      </section>
 
       {error && (
         <div className="toast toast--error">
@@ -347,43 +392,107 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
       )}
 
       <form onSubmit={handleSubmit} className="entry-form">
-        {/* Imagery Section */}
+        {/* ===================================================
+            MULTIPLE IMAGERY SECTION
+            =================================================== */}
         <div className="card-box">
-          <h2 className="card-box-title">Visual Asset</h2>
-          <div className="edit-img-wrap">
-            <img
-              src={imagePreview || currentImageUrl}
-              alt="Current hardware"
-              className="edit-current-img"
-            />
-            <div className="edit-img-controls">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <h2 className="card-box-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Images size={20} /> Galeri Foto Produk ({images.length})
+            </h2>
+            <span style={{ fontSize: '0.8rem', color: 'var(--steel)' }}>
+              Foto pertama (★ Utama) akan menjadi thumbnail utama di katalog.
+            </span>
+          </div>
+
+          {/* Current Images Grid */}
+          <div className="multi-img-grid">
+            {images.map((img, idx) => (
+              <div
+                key={idx}
+                className={`multi-img-card ${idx === 0 ? 'multi-img-card--primary' : ''}`}
+              >
+                {idx === 0 && <span className="multi-img-badge-primary">★ Foto Utama</span>}
+                <img src={img} alt={`Asset ${idx + 1}`} className="multi-img-thumb" />
+                <div className="multi-img-actions">
+                  {idx !== 0 ? (
+                    <button
+                      type="button"
+                      className="multi-img-btn"
+                      onClick={() => handleSetPrimary(idx)}
+                      title="Jadikan foto utama"
+                    >
+                      <Star size={12} /> Utama
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: '0.72rem', color: 'var(--brass)', fontWeight: 700 }}>Utama</span>
+                  )}
+
+                  <button
+                    type="button"
+                    className="multi-img-btn multi-img-btn--danger"
+                    onClick={() => handleRemoveImage(idx)}
+                    disabled={images.length <= 1}
+                    title="Hapus foto ini"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Add More Images Controls */}
+          <div className="multi-img-add-row">
+            <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>Tambah Foto ke Galeri:</span>
+            
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
               <input
-                id="edit-gun-image"
+                id="edit-multi-file-input"
                 type="file"
+                multiple
                 accept="image/jpeg,image/jpg,image/png,image/webp"
-                onChange={handleImageChange}
+                onChange={handleFilesUpload}
                 className="hidden-file-input"
               />
-              <label htmlFor="edit-gun-image" className="btn btn--outline btn--sm">
-                <Upload size={14} /> Select New Image File
+              <label htmlFor="edit-multi-file-input" className="btn btn--outline btn--sm" style={{ cursor: 'pointer' }}>
+                <Upload size={14} /> Upload File dari Komputer
               </label>
 
-              {imageFile && (
-                <button
-                  type="button"
-                  className="btn btn--primary btn--sm"
-                  onClick={handleUploadNewImage}
-                  disabled={uploading}
-                >
-                  {uploading ? (
-                    <>
-                      <Loader size={14} className="spin" /> Uploading…
-                    </>
-                  ) : (
-                    'Upload to MinIO'
-                  )}
-                </button>
+              {uploading && (
+                <span style={{ fontSize: '0.82rem', color: 'var(--steel)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <Loader size={14} className="spin" /> Mengunggah…
+                </span>
               )}
+            </div>
+
+            {/* Armory Presets */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--steel)' }}>Preset cepat:</span>
+              <button type="button" className="pill" onClick={() => handleAddPreset('/guns/pistol.svg')}>+ Pistol</button>
+              <button type="button" className="pill" onClick={() => handleAddPreset('/guns/rifle.svg')}>+ Rifle</button>
+              <button type="button" className="pill" onClick={() => handleAddPreset('/guns/shotgun.svg')}>+ Shotgun</button>
+              <button type="button" className="pill" onClick={() => handleAddPreset('/guns/blueprint.svg')}>+ Blueprint</button>
+              <button type="button" className="pill" onClick={() => handleAddPreset('/guns/accessory.svg')}>+ Aksesori</button>
+            </div>
+
+            {/* Custom URL Input */}
+            <div style={{ display: 'flex', gap: '8px', maxWidth: '420px', marginTop: '4px' }}>
+              <input
+                type="url"
+                placeholder="https://contoh.com/gambar.png"
+                value={customImageUrl}
+                onChange={(e) => setCustomImageUrl(e.target.value)}
+                className="form-input"
+                style={{ fontSize: '0.82rem', padding: '6px 10px' }}
+              />
+              <button
+                type="button"
+                className="btn btn--outline btn--sm"
+                onClick={handleAddCustomUrl}
+              >
+                <Plus size={14} /> Tambah URL
+              </button>
             </div>
           </div>
         </div>
@@ -407,33 +516,33 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
 
           <div className="form-group">
             <label htmlFor="edit-type" className="form-label">
-              Platform / Category <span className="req">*</span>
+              Weapon Category
             </label>
             <select
               id="edit-type"
               name="type"
               value={formData.type}
-              onChange={(e) =>
+              onChange={(e) => {
+                const val = e.target.value
                 setFormData((p) => ({
                   ...p,
-                  type: e.target.value,
-                  category: e.target.value === 'Pistol' ? 'makanan' : 'minuman',
+                  type: val,
+                  category: val === 'Rifle' ? 'minuman' : 'makanan',
                 }))
-              }
+              }}
               className="form-select"
             >
-              <option value="Pistol">Pistol (Sidearm)</option>
-              <option value="Rifle">Rifle (Long Gun)</option>
-              <option value="Shotgun">Shotgun (Smoothbore)</option>
-              <option value="Submachine Gun">Submachine Gun</option>
+              <option value="Pistol">Pistol / Handgun</option>
+              <option value="Rifle">Rifle / Carbine</option>
+              <option value="Shotgun">Shotgun</option>
+              <option value="Submachine Gun">Submachine Gun (SMG)</option>
+              <option value="Precision">Precision / Sniper</option>
             </select>
           </div>
-        </div>
 
-        <div className="form-grid form-grid--3">
           <div className="form-group">
             <label htmlFor="edit-caliber" className="form-label">
-              Caliber / Chambering <span className="req">*</span>
+              Primary Caliber <span className="req">*</span>
             </label>
             <input
               id="edit-caliber"
@@ -441,6 +550,7 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
               name="caliber"
               value={formData.caliber}
               onChange={(e) => setFormData((p) => ({ ...p, caliber: e.target.value }))}
+              placeholder="e.g. 9x19mm, 5.56 NATO, 12 GA"
               className="form-input"
               required
             />
@@ -454,76 +564,79 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
               id="edit-price"
               type="number"
               name="price"
+              min="0"
+              step="1"
               value={formData.price}
               onChange={(e) => setFormData((p) => ({ ...p, price: e.target.value }))}
               className="form-input"
-              min="0"
               required
             />
           </div>
 
           <div className="form-group">
-            <label htmlFor="edit-difficulty" className="form-label">
-              Grade / Build Quality <span className="req">*</span>
+            <label htmlFor="edit-wa" className="form-label">
+              Nomor WhatsApp Penjual
             </label>
-            <select
-              id="edit-difficulty"
-              name="difficulty"
-              value={formData.difficulty}
-              onChange={(e) => setFormData((p) => ({ ...p, difficulty: e.target.value }))}
-              className="form-select"
-            >
-              <option value="mudah">Commercial / Standard</option>
-              <option value="sedang">Mil-Spec / Service Issue</option>
-              <option value="sulit">Match Grade / Custom</option>
-            </select>
+            <input
+              id="edit-wa"
+              type="text"
+              name="seller_whatsapp"
+              value={formData.seller_whatsapp}
+              onChange={(e) => setFormData((p) => ({ ...p, seller_whatsapp: e.target.value }))}
+              placeholder="6281234567890"
+              className="form-input"
+            />
           </div>
         </div>
 
+        {/* Description */}
         <div className="form-group">
           <label htmlFor="edit-desc" className="form-label">
-            Armory Description
+            Field Description &amp; History
           </label>
           <textarea
             id="edit-desc"
             name="description"
+            rows={4}
             value={formData.description}
             onChange={(e) => setFormData((p) => ({ ...p, description: e.target.value }))}
-            rows={3}
             className="form-textarea"
           />
         </div>
 
-        {/* Specs */}
-        <div className="form-fieldset">
-          <div className="fieldset-header">
-            <label className="form-label">Specifications &amp; Components</label>
+        {/* Specifications */}
+        <div className="card-box">
+          <div className="card-box-header">
+            <h2 className="card-box-title">Technical Specifications</h2>
             <button type="button" className="btn btn--outline btn--sm" onClick={addSpec}>
               <Plus size={14} /> Add Spec
             </button>
           </div>
-          <div className="multi-rows">
-            {specs.map((spec, i) => (
-              <div key={i} className="multi-row">
+
+          <div className="repeater-list">
+            {specs.map((spec, index) => (
+              <div key={index} className="repeater-row">
                 <input
                   type="text"
-                  placeholder="Attribute"
+                  placeholder="Spec name (e.g. Barrel Length, Action)"
                   value={spec.name}
-                  onChange={(e) => handleSpecChange(i, 'name', e.target.value)}
-                  className="form-input"
+                  onChange={(e) => handleSpecChange(index, 'name', e.target.value)}
+                  className="form-input repeater-input"
+                  required
                 />
                 <input
                   type="text"
-                  placeholder="Value"
+                  placeholder="Value (e.g. 16.5 inches, Semi-Auto)"
                   value={spec.quantity}
-                  onChange={(e) => handleSpecChange(i, 'quantity', e.target.value)}
-                  className="form-input"
+                  onChange={(e) => handleSpecChange(index, 'quantity', e.target.value)}
+                  className="form-input repeater-input"
                 />
                 <button
                   type="button"
-                  className="btn btn--danger-ghost"
-                  onClick={() => removeSpec(i)}
+                  className="icon-btn repeater-remove"
+                  onClick={() => removeSpec(index)}
                   disabled={specs.length <= 1}
+                  title="Remove spec"
                 >
                   <X size={16} />
                 </button>
@@ -532,29 +645,33 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
           </div>
         </div>
 
-        {/* Steps */}
-        <div className="form-fieldset">
-          <div className="fieldset-header">
-            <label className="form-label">Assembly &amp; Maintenance Protocol</label>
+        {/* Maintenance / Assembly Steps */}
+        <div className="card-box">
+          <div className="card-box-header">
+            <h2 className="card-box-title">Maintenance &amp; Assembly Steps</h2>
             <button type="button" className="btn btn--outline btn--sm" onClick={addStep}>
               <Plus size={14} /> Add Step
             </button>
           </div>
-          <div className="multi-rows">
-            {steps.map((st, i) => (
-              <div key={i} className="step-row">
-                <span className="step-num">{i + 1}</span>
-                <input
-                  type="text"
-                  value={st}
-                  onChange={(e) => handleStepChange(i, e.target.value)}
-                  className="form-input"
+
+          <div className="repeater-list">
+            {steps.map((step, index) => (
+              <div key={index} className="repeater-row repeater-row--step">
+                <span className="step-num">{index + 1}</span>
+                <textarea
+                  rows={2}
+                  placeholder={`Step ${index + 1} instructions...`}
+                  value={step}
+                  onChange={(e) => handleStepChange(index, e.target.value)}
+                  className="form-textarea repeater-input"
+                  required
                 />
                 <button
                   type="button"
-                  className="btn btn--danger-ghost"
-                  onClick={() => removeStep(i)}
+                  className="icon-btn repeater-remove"
+                  onClick={() => removeStep(index)}
                   disabled={steps.length <= 1}
+                  title="Remove step"
                 >
                   <X size={16} />
                 </button>
@@ -563,45 +680,32 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
           </div>
         </div>
 
-        {/* Featured */}
-        <div className="checkbox-row">
-          <input
-            id="edit-is-featured"
-            type="checkbox"
-            name="is_featured"
-            checked={formData.is_featured}
-            onChange={(e) => setFormData((p) => ({ ...p, is_featured: e.target.checked }))}
-            className="form-checkbox"
-          />
-          <label htmlFor="edit-is-featured" className="checkbox-label">
-            Feature in Armory Showcase
-          </label>
-        </div>
-
-        {/* Submit */}
-        <div className="form-actions-bar">
-          <button type="button" className="btn btn--outline" onClick={onBack} disabled={updating}>
-            Cancel
+        {/* Submit bar */}
+        <div className="form-submit-bar">
+          <button type="button" className="btn btn--outline" onClick={onBack}>
+            Batal
           </button>
           <button type="submit" className="btn btn--primary" disabled={updating}>
             {updating ? (
               <>
-                <Loader size={18} className="spin" /> Updating Record…
+                <Loader size={16} className="spin" /> Menyimpan Perubahan…
               </>
             ) : (
-              'Save Changes'
+              <>
+                <Save size={16} /> Simpan Perubahan Hardware
+              </>
             )}
           </button>
         </div>
       </form>
 
-      {/* Restore draft dialog */}
+      {/* Restore Draft Modal */}
       <ConfirmModal
         open={showDraftModal}
-        title="Resume Unsaved Changes?"
-        message={`An unsaved draft for this product was saved on ${draftTimestamp ? formatDraftTime(draftTimestamp) : 'earlier'}. Would you like to restore it?`}
+        title="Restore Saved Edit Draft?"
+        message={`An unsaved draft for this item was found from ${formatDraftTime(draftTimestamp)}. Would you like to restore it?`}
         confirmLabel="Restore Draft"
-        cancelLabel="Discard"
+        cancelLabel="Discard Draft"
         onConfirm={handleLoadDraft}
         onCancel={handleDiscardDraft}
       />

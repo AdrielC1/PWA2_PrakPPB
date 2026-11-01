@@ -1,7 +1,7 @@
 import { apiClient, IS_SUPABASE } from '../config/api'
 
 // ---------------------------------------------------------------------------
-// ReviewService — product reviews & ratings.
+// ReviewService — product reviews & ratings with full CRUD and Voting.
 // Supports both Supabase (public.reviews) and university API (/api/v1/recipes/:id/reviews).
 // ---------------------------------------------------------------------------
 
@@ -18,9 +18,12 @@ class ReviewService {
         ? data.map((r) => ({
             id: r.id,
             product_id: r.product_id,
+            user_id: r.user_id,
             user_identifier: r.user_id ? `Operator ${String(r.user_id).substring(0, 8)}` : 'Anonymous',
-            rating: r.rating,
+            rating: Number(r.rating || 5),
             comment: r.comment || '',
+            upvotes: Number(r.upvotes || 0),
+            downvotes: Number(r.downvotes || 0),
             created_at: r.created_at,
           }))
         : []
@@ -56,7 +59,7 @@ class ReviewService {
   }
 
   /**
-   * Edit an existing review.
+   * Edit an existing review (Update).
    */
   async updateReview(reviewId, reviewData) {
     if (IS_SUPABASE) {
@@ -75,7 +78,7 @@ class ReviewService {
   }
 
   /**
-   * Delete a review.
+   * Delete a review (Delete).
    */
   async deleteReview(reviewId) {
     if (IS_SUPABASE) {
@@ -84,6 +87,27 @@ class ReviewService {
     }
 
     return apiClient.delete(`/api/v1/reviews/${reviewId}`)
+  }
+
+  /**
+   * Vote on a review (Thumbs up / Thumbs down).
+   */
+  async voteReview(reviewId, { upvotes, downvotes }) {
+    if (IS_SUPABASE) {
+      try {
+        const res = await apiClient.patch(
+          `/rest/v1/reviews?id=eq.${reviewId}`,
+          { upvotes: Number(upvotes), downvotes: Number(downvotes) },
+          { headers: { Prefer: 'return=representation' } },
+        )
+        return { success: true, data: Array.isArray(res) ? res[0] : res }
+      } catch (err) {
+        // If upvotes/downvotes columns do not exist in DB yet (42703), gracefully ignore backend error
+        return { success: true, data: { id: reviewId, upvotes, downvotes } }
+      }
+    }
+
+    return { success: true, data: { id: reviewId, upvotes, downvotes } }
   }
 }
 

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 90">
+  <rect width="120" height="90" fill="#e8ecee" />
+  <g fill="#18222c">
+    <!-- Tactical Optic / Magazine -->
+    <rect x="25" y="38" width="70" height="14" rx="2" />
+    <rect x="35" y="28" width="20" height="10" rx="1" fill="#303e4d" />
+    <circle cx="45" cy="33" r="3" fill="#a67c2e" />
+    <path d="M42 52h36l-8 24H50z" fill="#202b37" />
+  </g>
+  <rect x="25" y="38" width="70" height="2" fill="#a67c2e" />
+  <text x="60" y="84" fill="#667788" font-size="6" font-family="monospace" text-anchor="middle">TACTICAL ASSEMBLY</text>
+</svg>
+

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 90">
+  <rect width="120" height="90" fill="#1b2a4a" />
+  <!-- Blueprint grid lines -->
+  <path d="M0 15h120M0 30h120M0 45h120M0 60h120M0 75h120M15 0v90M30 0v90M45 0v90M60 0v90M75 0v90M90 0v90M105 0v90" stroke="#2c3e66" stroke-width="0.5" />
+  <!-- Wireframe weapon outline -->
+  <g fill="none" stroke="#e0e8f5" stroke-width="1.5">
+    <rect x="20" y="32" width="76" height="12" rx="1" />
+    <rect x="88" y="26" width="6" height="6" />
+    <path d="M30 44l-5 32h14l6-32" />
+    <circle cx="65" cy="38" r="3" stroke="#a67c2e" stroke-width="1" />
+  </g>
+  <text x="60" y="83" fill="#a67c2e" font-size="6" font-family="monospace" text-anchor="middle">SPEC SCHEMATIC 1:1</text>
+</svg>
+

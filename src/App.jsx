@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Header from './components/Header.jsx'
 import Footer from './components/Footer.jsx'
 import Catalog from './pages/Catalog.jsx'
@@ -7,12 +7,12 @@ import ProfilePage from './pages/ProfilePage.jsx'
 import CreateGunPage from './pages/CreateGunPage.jsx'
 import EditGunPage from './pages/EditGunPage.jsx'
 import GunDetail from './components/gun/GunDetail.jsx'
-import About from './pages/About.jsx'
-import Contact from './pages/Contact.jsx'
 import PWABadge from './components/PWABadge.jsx'
 import ConfirmModal from './components/modals/ConfirmModal.jsx'
 import SplashScreen from './components/common/SplashScreen.jsx'
 import gunService from './services/gunService.js'
+import GUNS_LOCAL from './data/guns.js'
+import { queryCache } from './utils/queryCache.js'
 import './App.css'
 
 function App() {
@@ -24,7 +24,58 @@ function App() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
-  // Unified navigation handler
+  // Deep linking: detect ?product=ID from URL (essential for shared links on Vercel)
+  useEffect(() => {
+    const handleUrlRoute = async () => {
+      if (typeof window === 'undefined') return
+      const params = new URLSearchParams(window.location.search)
+      const productId = params.get('product') || params.get('id')
+
+      if (productId) {
+        setShowSplash(false)
+
+        // 1. Check local items first
+        const localMatch = GUNS_LOCAL.find(
+          (g, idx) => String(g.id || `local-${idx}`) === String(productId) || g.name === productId
+        )
+        if (localMatch) {
+          setSelectedGun(localMatch)
+          setMode('detail')
+          return
+        }
+
+        // 2. Fetch from API
+        try {
+          const res = await gunService.getGunById(productId)
+          if (res?.success && res.data) {
+            setSelectedGun(res.data)
+            setMode('detail')
+          }
+        } catch (err) {
+          console.warn('Direct product link not found:', err)
+        }
+      }
+    }
+
+    handleUrlRoute()
+
+    // Handle browser forward / back button
+    const onPopState = () => {
+      const params = new URLSearchParams(window.location.search)
+      const productId = params.get('product') || params.get('id')
+      if (!productId) {
+        setMode('list')
+        setSelectedGun(null)
+      } else {
+        handleUrlRoute()
+      }
+    }
+
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  // Unified navigation handler with URL pushState
   const handleNavigate = (target, payload) => {
     if (target === 'Create') {
       setMode('create')
@@ -37,6 +88,10 @@ function App() {
       setSelectedGun(payload)
       setMode('detail')
       window.scrollTo({ top: 0, behavior: 'smooth' })
+      const id = payload?.id || payload?.name
+      if (id && typeof window !== 'undefined') {
+        window.history.pushState(null, '', `?product=${encodeURIComponent(id)}`)
+      }
     } else {
       // Tab change
       setTab(target)
@@ -44,6 +99,9 @@ function App() {
       setSelectedGun(null)
       setEditingGun(null)
       window.scrollTo({ top: 0, behavior: 'smooth' })
+      if (typeof window !== 'undefined' && window.location.search) {
+        window.history.pushState(null, '', window.location.pathname)
+      }
     }
   }
 
@@ -51,6 +109,9 @@ function App() {
     setMode('list')
     setSelectedGun(null)
     setEditingGun(null)
+    if (typeof window !== 'undefined' && window.location.search) {
+      window.history.pushState(null, '', window.location.pathname)
+    }
   }
 
   return (
@@ -71,6 +132,7 @@ function App() {
           <CreateGunPage
             onBack={handleBackToList}
             onSuccess={() => {
+              queryCache.invalidate('guns')
               handleBackToList()
               setTab('Catalog')
             }}
@@ -83,6 +145,8 @@ function App() {
             gunId={editingGun?.id}
             onBack={handleBackToList}
             onSuccess={() => {
+              queryCache.invalidate('guns')
+              queryCache.invalidate('gun')
               handleBackToList()
               setTab('Catalog')
             }}
@@ -113,10 +177,11 @@ function App() {
               />
             )}
             {tab === 'Profile' && (
-              <ProfilePage onReplaySplash={() => setShowSplash(true)} />
+              <ProfilePage
+                onReplaySplash={() => setShowSplash(true)}
+                onNavigate={(destination, payload) => handleNavigate(destination, payload)}
+              />
             )}
-            {tab === 'About' && <About />}
-            {tab === 'Contact' && <Contact />}
           </>
         )}
       </main>
@@ -124,16 +189,17 @@ function App() {
       {/* Global Delete Confirmation */}
       <ConfirmModal
         open={Boolean(deleteTarget)}
-        title="Delete Hardware Record"
-        message={`Are you sure you want to delete "${deleteTarget?.name}"? This action cannot be undone.`}
-        confirmLabel="Delete"
+        title="Hapus Hardware Record"
+        message={`Produk "${deleteTarget?.name}" akan dipindahkan ke Recycle Bin. Dapat dipulihkan dari halaman Profile.`}
+        confirmLabel="Hapus (ke Recycle Bin)"
         danger
         loading={deleting}
         onConfirm={async () => {
           if (!deleteTarget) return
           try {
             setDeleting(true)
-            await gunService.deleteGun(deleteTarget.id)
+            await gunService.softDeleteGun(deleteTarget.id)
+            queryCache.invalidate('guns')
             setDeleteTarget(null)
             handleBackToList()
             setTab('Catalog')

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import favoriteService from '../services/favoriteService'
 import { getUserIdentifier } from '../services/userService'
+import { queryCache } from '../utils/queryCache'
 
 // ---------------------------------------------------------------------------
 // localStorage fallback — used when the backend is unavailable so that
@@ -27,45 +28,73 @@ const writeLocalFavs = (ids) => {
 }
 
 // ---------------------------------------------------------------------------
-// useFavorites — list all favourited product IDs.
+// useFavorites — list all favourited product IDs with Query Caching.
 //
 // First attempts the server; on failure uses localStorage.
 // ---------------------------------------------------------------------------
 
 export function useFavorites() {
-  const [favorites, setFavorites] = useState([])
-  const [loading, setLoading] = useState(true)
+  const userIdentifier = getUserIdentifier()
+  const cacheKey = queryCache.key('favorites', { userIdentifier })
+  const initialCached = queryCache.get(cacheKey)
+
+  const [favorites, setFavorites] = useState(() => initialCached || readLocalFavs())
+  const [loading, setLoading] = useState(() => !initialCached)
   const [error, setError] = useState(null)
   const [isLocal, setIsLocal] = useState(false)
-  const userIdentifier = getUserIdentifier()
 
-  const fetchFavorites = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
-
-      const response = await favoriteService.getFavorites(userIdentifier)
-
-      if (response.success) {
-        setFavorites(response.data || [])
-        setIsLocal(false)
-      } else {
-        throw new Error(response.message)
+  const fetchFavorites = useCallback(
+    async ({ force = false } = {}) => {
+      // 1. If data is fresh in cache, skip network request!
+      if (!force && queryCache.isFresh(cacheKey)) {
+        const cached = queryCache.get(cacheKey)
+        if (cached) {
+          setFavorites(cached)
+          setLoading(false)
+          console.log('%c⚡ [QueryCache HIT]', 'color: #27ae60; font-weight: bold;', 'Favorites dari cache (0 request)')
+          return
+        }
       }
-    } catch {
-      // Fallback to localStorage
-      setFavorites(readLocalFavs())
-      setIsLocal(true)
-    } finally {
-      setLoading(false)
-    }
-  }, [userIdentifier])
+
+      try {
+        if (!queryCache.has(cacheKey)) {
+          setLoading(true)
+        }
+        setError(null)
+
+        const response = await favoriteService.getFavorites(userIdentifier)
+
+        if (response.success) {
+          const list = response.data || []
+          queryCache.set(cacheKey, list, { staleTime: 2 * 60 * 1000 })
+          setFavorites(list)
+          setIsLocal(false)
+        } else {
+          throw new Error(response.message)
+        }
+      } catch {
+        // Fallback to localStorage
+        const localList = readLocalFavs()
+        setFavorites(localList)
+        setIsLocal(true)
+      } finally {
+        setLoading(false)
+      }
+    },
+    [userIdentifier, cacheKey]
+  )
 
   useEffect(() => {
     fetchFavorites()
   }, [fetchFavorites])
 
-  return { favorites, loading, error, isLocal, refetch: fetchFavorites }
+  return {
+    favorites,
+    loading,
+    error,
+    isLocal,
+    refetch: () => fetchFavorites({ force: true }),
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +116,9 @@ export function useToggleFavorite() {
         user_identifier: userIdentifier,
       })
 
+      // Invalidate favorites cache so all hooks update
+      queryCache.invalidate('favorites')
+
       if (response.success) {
         return response.data
       }
@@ -105,6 +137,7 @@ export function useToggleFavorite() {
         isFavorited = false
       }
       writeLocalFavs(current)
+      queryCache.invalidate('favorites')
       return { is_favorited: isFavorited }
     } finally {
       setLoading(false)

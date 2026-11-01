@@ -37,6 +37,7 @@ export default function CreateGunPage({ onBack, onSuccess }) {
     difficulty: 'mudah',  // 'mudah' (Standard) | 'sedang' (Service) | 'sulit' (Match)
     price: 599,
     description: '',
+    seller_whatsapp: '6281234567890',
     servings: 1,
     is_featured: false,
   })
@@ -261,6 +262,7 @@ export default function CreateGunPage({ onBack, onSuccess }) {
       name: formData.name.trim(),
       category: formData.category || 'makanan',
       description: formData.description.trim() || `${formData.type} caliber ${formData.caliber}.`,
+      seller_whatsapp: formData.seller_whatsapp || '6281234567890',
       image_url: uploadedImageUrl || '/guns/pistol.svg',
       prep_time: 15,
       cook_time: Number(formData.price) || 500, // Price stored in cook_time
@@ -572,6 +574,22 @@ export default function CreateGunPage({ onBack, onSuccess }) {
               rows={3}
               className="form-textarea"
             />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="seller_whatsapp" className="form-label">
+              Nomor WhatsApp Penjual (Contoh: 6281234567890)
+            </label>
+            <input
+              id="seller_whatsapp"
+              type="text"
+              name="seller_whatsapp"
+              value={formData.seller_whatsapp}
+              onChange={handleFormChange}
+              placeholder="6281234567890"
+              className="form-input"
+            />
+            <span className="form-hint">Digunakan calon pembeli untuk menghubungi via WhatsApp.</span>
           </div>
 
           {/* Specifications (Ingredients) */}
